@@ -79,17 +79,13 @@ function App() {
   }
 
   function deleteTask(id: string) {
-    setTasks((previousTasks) =>
-      previousTasks.filter((task) => task.id !== id),
-    );
+    setTasks((previousTasks) => previousTasks.filter((task) => task.id !== id));
   }
 
   function toggleTask(id: string) {
     setTasks((previousTasks) =>
       previousTasks.map((task) =>
-        task.id === id
-          ? { ...task, completed: !task.completed }
-          : task,
+        task.id === id ? { ...task, completed: !task.completed } : task,
       ),
     );
   }
@@ -128,18 +124,14 @@ function App() {
 
         <Route
           path="/tasks/:id/edit"
-          element={
-            <EditTask tasks={tasks} onUpdateTask={updateTask} />
-          }
+          element={<EditTask tasks={tasks} onUpdateTask={updateTask} />}
         />
 
         <Route
           path="*"
           element={
             <main className="px-5 py-16 text-center">
-              <h1 className="text-3xl font-semibold">
-                Page not found
-              </h1>
+              <h1 className="text-3xl font-semibold">Page not found</h1>
 
               <p className="mt-3 text-gray-500">
                 The page you are looking for does not exist.
