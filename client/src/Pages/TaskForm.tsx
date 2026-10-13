@@ -7,7 +7,7 @@ import type { Category, TaskInput } from "../types/task";
 
 interface TaskFormProps {
   initialTask?: TaskInput;
-  onSave: (task: TaskInput) => void;
+  onSave: (task: TaskInput) => Promise<void>;
 }
 
 function getToday() {
@@ -32,12 +32,16 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
     initialTask?.category ?? "",
   );
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const inputClass =
-    "w-full rounded-md border border-gray-300 bg-transparent px-4 py-3 outline-none focus:border-[#974fd0] focus:ring-2 focus:ring-purple-100";
+    "w-full rounded-md border border-gray-300 bg-transparent px-4 py-3 outline-none focus:border-[#974fd0] focus:ring-2 focus:ring-purple-100 disabled:cursor-not-allowed disabled:opacity-60";
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isSaving) return;
+
     setError("");
 
     if (!title.trim() || !description.trim() || !dueDate || !category) {
@@ -50,12 +54,24 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
       return;
     }
 
-    onSave({
-      title: title.trim(),
-      description: description.trim(),
-      dueDate,
-      category,
-    });
+    setIsSaving(true);
+
+    try {
+      await onSave({
+        title: title.trim(),
+        description: description.trim(),
+        dueDate,
+        category,
+      });
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to save task. Please try again.",
+      );
+      setIsSaving(false);
+      return;
+    }
 
     navigate("/tasks");
   }
@@ -79,7 +95,11 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
         </h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-10 space-y-7">
+      <form
+        onSubmit={handleSubmit}
+        aria-busy={isSaving}
+        className="mt-10 space-y-7"
+      >
         <div>
           <label
             htmlFor="title"
@@ -95,6 +115,8 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="E.g. Complete internship project"
+            maxLength={150}
+            disabled={isSaving}
             className={inputClass}
             required
           />
@@ -115,6 +137,8 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
             onChange={(event) => setDescription(event.target.value)}
             placeholder="Briefly describe your task..."
             rows={6}
+            maxLength={2000}
+            disabled={isSaving}
             className={`${inputClass} resize-y`}
             required
           />
@@ -136,6 +160,7 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
               onChange={(event) =>
                 setCategory(event.target.value as Category | "")
               }
+              disabled={isSaving}
               className={inputClass}
               required
             >
@@ -166,6 +191,7 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
               value={dueDate}
               min={getToday()}
               onChange={(event) => setDueDate(event.target.value)}
+              disabled={isSaving}
               className={`${inputClass} min-w-0`}
               required
             />
@@ -180,9 +206,10 @@ function TaskForm({ initialTask, onSave }: TaskFormProps) {
 
         <button
           type="submit"
-          className="w-full cursor-pointer rounded-md bg-[#974fd0] px-6 py-3 text-lg font-medium text-white transition-colors hover:bg-[#803db7] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-600"
+          disabled={isSaving}
+          className="w-full cursor-pointer rounded-md bg-[#974fd0] px-6 py-3 text-lg font-medium text-white transition-colors hover:bg-[#803db7] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-purple-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isEditing ? "Save Changes" : "Done"}
+          {isSaving ? "Saving..." : isEditing ? "Save Changes" : "Done"}
         </button>
       </form>
 

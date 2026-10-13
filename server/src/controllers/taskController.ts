@@ -29,21 +29,51 @@ export const createTask: RequestHandler = async (req, res) => {
 };
 
 export const getTasks: RequestHandler = async (req, res) => {
-  const { category, completed } = req.query;
+  const { category, completed, search } = req.query;
 
   const filter: {
     owner: string;
     category?: string;
     completed?: boolean;
+    $or?: Array<{ title: RegExp } | { description: RegExp }>;
   } = {
     owner: res.locals.userId,
   };
 
+  if (search !== undefined) {
+    if (typeof search !== "string") {
+      res.status(400).json({
+        success: false,
+        message: "Search must be a string.",
+      });
+      return;
+    }
+
+    const trimmedSearch = search.trim();
+
+    if (trimmedSearch.length > 200) {
+      res.status(400).json({
+        success: false,
+        message: "Search must not exceed 200 characters.",
+      });
+      return;
+    }
+
+    if (trimmedSearch) {
+      // Treat special characters as ordinary search text.
+      const escapedSearch = trimmedSearch.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+
+      const pattern = new RegExp(escapedSearch, "i");
+
+      filter.$or = [{ title: pattern }, { description: pattern }];
+    }
+  }
+
   if (category !== undefined) {
-    if (
-      typeof category !== "string" ||
-      !categories.includes(category)
-    ) {
+    if (typeof category !== "string" || !categories.includes(category)) {
       res.status(400).json({
         success: false,
         message: "Invalid category filter.",
