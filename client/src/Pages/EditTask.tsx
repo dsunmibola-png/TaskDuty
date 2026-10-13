@@ -4,7 +4,10 @@ import type { Task, TaskInput } from "../types/task";
 
 interface EditTaskProps {
   tasks: Task[];
-  onUpdateTask: (id: string, changes: TaskInput) => void;
+  onUpdateTask: (
+    id: string,
+    changes: TaskInput,
+  ) => Promise<void>;
 }
 
 function EditTask({ tasks, onUpdateTask }: EditTaskProps) {

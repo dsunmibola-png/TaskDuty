@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { categories } from "../types/task";
@@ -6,8 +6,12 @@ import type { Task } from "../types/task";
 
 interface MyTasksProps {
   tasks: Task[];
-  onDeleteTask: (id: string) => void;
-  onToggleTask: (id: string) => void;
+  onSearchTasks: (
+    search: string,
+    signal: AbortSignal,
+  ) => Promise<Task[]>;
+  onDeleteTask: (id: string) => Promise<void>;
+  onToggleTask: (id: string) => Promise<void>;
 }
 
 const categoryColors = {
@@ -19,13 +23,72 @@ const categoryColors = {
 
 function MyTasks({
   tasks,
+  onSearchTasks,
   onDeleteTask,
   onToggleTask,
 }: MyTasksProps) {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Task[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(
+    null,
+  );
+  const [searchRetry, setSearchRetry] = useState(0);
 
-  const filteredTasks = tasks.filter((task) => {
+  useEffect(() => {
+    const query = searchQuery.trim();
+
+    setSearchError("");
+
+    if (!query) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    setIsSearching(true);
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const results = await onSearchTasks(
+          query,
+          controller.signal,
+        );
+
+        if (!controller.signal.aborted) {
+          setSearchResults(results);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setSearchResults([]);
+          setSearchError(
+            error instanceof Error
+              ? error.message
+              : "Search failed. Please try again.",
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [searchQuery, tasks, onSearchTasks, searchRetry]);
+
+  const visibleTasks = searchQuery.trim() ? searchResults : tasks;
+
+  const filteredTasks = visibleTasks.filter((task) => {
     const matchesCategory =
       categoryFilter === "All" || task.category === categoryFilter;
 
@@ -40,13 +103,55 @@ function MyTasks({
   const selectClass =
     "w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-[#974fd0] focus:ring-2 focus:ring-purple-100";
 
-  function handleDelete(task: Task) {
+  function clearFilters() {
+    setSearchQuery("");
+    setSearchError("");
+    setIsSearching(false);
+    setCategoryFilter("All");
+    setStatusFilter("All");
+  }
+
+  async function handleDelete(task: Task) {
+    if (pendingTaskId) return;
+
     const confirmed = window.confirm(
       `Delete "${task.title}"? This cannot be undone.`,
     );
 
-    if (confirmed) {
-      onDeleteTask(task.id);
+    if (!confirmed) return;
+
+    setActionError("");
+    setPendingTaskId(task.id);
+
+    try {
+      await onDeleteTask(task.id);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete task.",
+      );
+    } finally {
+      setPendingTaskId(null);
+    }
+  }
+
+  async function handleToggle(id: string) {
+    if (pendingTaskId) return;
+
+    setActionError("");
+    setPendingTaskId(id);
+
+    try {
+      await onToggleTask(id);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update task.",
+      );
+    } finally {
+      setPendingTaskId(null);
     }
   }
 
@@ -67,7 +172,32 @@ function MyTasks({
         </Link>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8">
+        <label
+          htmlFor="task-search"
+          className="mb-2 block text-sm font-medium"
+        >
+          Search tasks
+        </label>
+
+        <input
+          id="task-search"
+          type="search"
+          value={searchQuery}
+          maxLength={200}
+          onChange={(event) => {
+            const value = event.target.value;
+
+            setSearchQuery(value);
+            setSearchError("");
+            setIsSearching(Boolean(value.trim()));
+          }}
+          placeholder="Search by title or description..."
+          className={selectClass}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div>
           <label
             htmlFor="category-filter"
@@ -79,7 +209,9 @@ function MyTasks({
           <select
             id="category-filter"
             value={categoryFilter}
-            onChange={(event) => setCategoryFilter(event.target.value)}
+            onChange={(event) =>
+              setCategoryFilter(event.target.value)
+            }
             className={selectClass}
           >
             <option value="All">All categories</option>
@@ -103,7 +235,9 @@ function MyTasks({
           <select
             id="status-filter"
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
+            onChange={(event) =>
+              setStatusFilter(event.target.value)
+            }
             className={selectClass}
           >
             <option value="All">All statuses</option>
@@ -113,11 +247,57 @@ function MyTasks({
         </div>
       </div>
 
-      <p aria-live="polite" className="mt-4 text-sm text-gray-500">
-        Showing {filteredTasks.length} of {tasks.length} tasks
-      </p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p aria-live="polite" className="text-sm text-gray-500">
+          {isSearching
+            ? "Searching..."
+            : searchError
+              ? "Search unavailable."
+              : `Showing ${filteredTasks.length} of ${tasks.length} tasks`}
+        </p>
 
-      {filteredTasks.length === 0 ? (
+        {(searchQuery ||
+          categoryFilter !== "All" ||
+          statusFilter !== "All") && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="cursor-pointer text-sm text-[#974fd0] underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {actionError && (
+        <p role="alert" className="mt-4 text-sm text-red-600">
+          {actionError}
+        </p>
+      )}
+
+      {isSearching ? (
+        <p className="mt-8 text-gray-500">
+          Finding matching tasks...
+        </p>
+      ) : searchError ? (
+        <div className="mt-8">
+          <p role="alert" className="text-red-600">
+            {searchError}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSearchError("");
+              setIsSearching(true);
+              setSearchRetry((count) => count + 1);
+            }}
+            className="mt-3 cursor-pointer text-[#974fd0] underline"
+          >
+            Try search again
+          </button>
+        </div>
+      ) : filteredTasks.length === 0 ? (
         <div className="mt-8 rounded-lg border border-dashed border-purple-200 px-6 py-12 text-center">
           <h2 className="text-xl font-medium">
             {tasks.length === 0 ? "No tasks yet" : "No matching tasks"}
@@ -126,7 +306,7 @@ function MyTasks({
           <p className="mt-2 text-gray-500">
             {tasks.length === 0
               ? "Create your first task to get started."
-              : "Try a different category or completion status."}
+              : "Try a different search, category, or completion status."}
           </p>
 
           {tasks.length === 0 ? (
@@ -139,10 +319,7 @@ function MyTasks({
           ) : (
             <button
               type="button"
-              onClick={() => {
-                setCategoryFilter("All");
-                setStatusFilter("All");
-              }}
+              onClick={clearFilters}
               className="mt-5 cursor-pointer text-[#974fd0] underline"
             >
               Clear filters
@@ -154,6 +331,7 @@ function MyTasks({
           {filteredTasks.map((task) => (
             <li
               key={task.id}
+              aria-busy={pendingTaskId === task.id}
               className="rounded-lg border border-gray-200 p-4 sm:p-5"
             >
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
@@ -177,9 +355,10 @@ function MyTasks({
 
                   <button
                     type="button"
-                    onClick={() => handleDelete(task)}
+                    onClick={() => void handleDelete(task)}
+                    disabled={pendingTaskId !== null}
                     aria-label={`Delete ${task.title}`}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[#974fd0] px-3 py-2 text-sm text-[#974fd0] hover:bg-purple-50"
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[#974fd0] px-3 py-2 text-sm text-[#974fd0] hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Trash2 size={15} aria-hidden="true" />
                     Delete
@@ -217,14 +396,19 @@ function MyTasks({
                   <input
                     type="checkbox"
                     checked={task.completed}
-                    onChange={() => onToggleTask(task.id)}
+                    onChange={() => void handleToggle(task.id)}
+                    disabled={pendingTaskId !== null}
                     aria-label={`Mark ${task.title} as ${
                       task.completed ? "incomplete" : "completed"
                     }`}
-                    className="h-4 w-4 accent-[#974fd0]"
+                    className="h-4 w-4 accent-[#974fd0] disabled:cursor-not-allowed"
                   />
 
-                  {task.completed ? "Completed" : "Mark complete"}
+                  {pendingTaskId === task.id
+                    ? "Updating..."
+                    : task.completed
+                      ? "Completed"
+                      : "Mark complete"}
                 </label>
               </div>
             </li>
