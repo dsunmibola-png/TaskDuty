@@ -1,5 +1,9 @@
 import type { Task, TaskInput } from "../types/task";
 
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL?.trim() || "/api"
+).replace(/\/+$/, "");
+
 interface ServerTask extends Omit<Task, "id"> {
   _id: string;
 }
@@ -36,15 +40,25 @@ async function request<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
   });
 
+  const contentType = response.headers.get("content-type");
+
+  if (!contentType?.includes("application/json")) {
+    throw new Error(
+      `The server returned an unexpected response (${response.status}). Please try again.`,
+    );
+  }
+
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || `Request failed (${response.status}).`);
+    throw new Error(
+      data.message || `Request failed (${response.status}).`,
+    );
   }
 
   return data as T;
@@ -63,7 +77,11 @@ function toTask(task: ServerTask): Task {
 
 export async function authenticate(
   mode: "login" | "register",
-  input: { name?: string; email: string; password: string },
+  input: {
+    name?: string;
+    email: string;
+    password: string;
+  },
 ): Promise<AuthResponse> {
   return request<AuthResponse>(`/auth/${mode}`, "", {
     method: "POST",
@@ -110,15 +128,22 @@ export async function patchTask(
   id: string,
   changes: Partial<TaskInput> & { completed?: boolean },
 ): Promise<Task> {
-  const data = await request<TaskResponse>(`/tasks/${id}`, token, {
-    method: "PATCH",
-    body: JSON.stringify(changes),
-  });
+  const data = await request<TaskResponse>(
+    `/tasks/${id}`,
+    token,
+    {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    },
+  );
 
   return toTask(data.task);
 }
 
-export async function removeTask(token: string, id: string): Promise<void> {
+export async function removeTask(
+  token: string,
+  id: string,
+): Promise<void> {
   await request(`/tasks/${id}`, token, {
     method: "DELETE",
   });

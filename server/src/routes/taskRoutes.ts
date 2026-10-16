@@ -1,12 +1,14 @@
 import { Router } from "express";
+
 import { requireAuth } from "../middleware/authMiddleware.js";
+
 import {
   createTask,
   getTasks,
   getTask,
   updateTask,
   deleteTask,
-} from "../controllers/TaskController.js";
+} from "../controllers/taskController.js";
 
 const router = Router();
 

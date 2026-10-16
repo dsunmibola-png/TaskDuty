@@ -1,12 +1,29 @@
 import express from "express";
 import type { ErrorRequestHandler } from "express";
+import cors from "cors";
+
 import authRoutes from "./routes/authRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
 
 const app = express();
 
+const allowedOrigins = (
+  process.env.CLIENT_URL ||
+  "http://localhost:5173,http://127.0.0.1:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+
 app.use(express.json({ limit: "10kb" }));
-app.use("/api/tasks", taskRoutes);
 
 app.get("/api/health", (_req, res) => {
   res.status(200).json({
@@ -16,6 +33,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/tasks", taskRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({
@@ -24,7 +42,12 @@ app.use((_req, res) => {
   });
 });
 
-const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+const errorHandler: ErrorRequestHandler = (
+  error,
+  _req,
+  res,
+  _next,
+) => {
   if (error.code === 11000) {
     res.status(409).json({
       success: false,
